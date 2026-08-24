@@ -1,11 +1,11 @@
 import { configureStore } from "@reduxjs/toolkit";
+import { builderReducer } from "./slices/builder-slice";
 
 export const makeStore = () => {
   return configureStore({
     reducer: {
-      // Slices (like builderSlice, uiSlice) will be registered here
+      builder: builderReducer,
     },
-    devTools: process.env.NODE_ENV !== "production",
   });
 };
 
