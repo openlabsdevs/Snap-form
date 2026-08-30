@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter, Space_Grotesk } from "next/font/google";
 import ReduxProvider from "@/providers/redux-provider";
+import QueryProvider from "@/providers/query-provider";
 import "./globals.css";
 
 const inter = Inter({
@@ -32,7 +33,9 @@ export default function RootLayout({
       className={`h-full antialiased ${inter.variable} ${spaceGrotesk.variable}`}
     >
       <body className="min-h-full flex flex-col font-[family-name:var(--font-inter)]">
-        <ReduxProvider>{children}</ReduxProvider>
+        <ReduxProvider>
+          <QueryProvider>{children}</QueryProvider>
+        </ReduxProvider>
       </body>
     </html>
   );
