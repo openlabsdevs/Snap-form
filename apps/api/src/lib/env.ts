@@ -28,6 +28,10 @@ export const config = {
   frontend: {
     url: process.env.FRONTEND_URL || "http://localhost:3001",
   },
+  trustedOrigins: (process.env.TRUSTED_ORIGINS ?? process.env.FRONTEND_URL ?? "http://localhost:3001")
+    .split(",")
+    .map((o) => o.trim())
+    .filter(Boolean),
   ai: {
     apiKey: process.env.OPENROUTER_API_KEY || "",
     model: process.env.AI_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free",
