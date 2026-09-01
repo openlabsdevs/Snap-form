@@ -12,6 +12,8 @@ if (!Number.isInteger(parsedPort) || parsedPort < 1 || parsedPort > 65535) {
   throw new Error("Invalid PORT: must be an integer between 1 and 65535");
 }
 
+const frontendUrl = process.env.FRONTEND_URL || "http://localhost:3001";
+
 export const config = {
   port: parsedPort,
   databaseUrl: requireEnv("DATABASE_URL"),
@@ -26,12 +28,13 @@ export const config = {
     githubClientSecret: process.env.GITHUB_CLIENT_SECRET || "",
   },
   frontend: {
-    url: process.env.FRONTEND_URL || "http://localhost:3001",
+    url: frontendUrl,
   },
-  trustedOrigins: (process.env.TRUSTED_ORIGINS ?? process.env.FRONTEND_URL ?? "http://localhost:3001")
-    .split(",")
-    .map((o) => o.trim())
-    .filter(Boolean),
+  trustedOrigins: (() => {
+    const source = process.env.TRUSTED_ORIGINS?.trim() ? process.env.TRUSTED_ORIGINS : frontendUrl;
+    const list = source.split(",").map((o) => o.trim()).filter(Boolean);
+    return list.length ? list : [frontendUrl];
+  })(),
   ai: {
     apiKey: process.env.OPENROUTER_API_KEY || "",
     model: process.env.AI_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free",
