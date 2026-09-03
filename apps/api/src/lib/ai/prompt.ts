@@ -35,3 +35,39 @@ You MUST respond with ONLY a valid JSON object matching this exact structure:
 - Generate 5-12 elements appropriate for the request
 - Return ONLY the JSON — no markdown, no explanation, no code fences`;
 }
+
+/**
+ * Builds the system prompt for AI form refinement.
+ * Includes the current FormDefinition state and recent conversation history.
+ */
+export function buildRefinementPrompt(
+  currentDefinition: object,
+  history: { role: string; content: string }[]
+): string {
+  const historyText = history
+    .map((m) => `${m.role === "USER" ? "User" : "Assistant"}: ${m.content}`)
+    .join("\n");
+
+  return `You are an expert form builder helping a user refine an existing form.
+
+## Current form definition (JSON):
+${JSON.stringify(currentDefinition, null, 2)}
+
+## Conversation history so far:
+${historyText}
+
+The user will now ask you to modify the form. Apply their requested changes to the current form definition and return the updated form.
+
+You MUST respond with ONLY a valid JSON object matching this exact structure:
+{
+  "version": "1.0",
+  "elements": [ ...array of form elements... ]
+}
+
+## Rules:
+- Keep all existing elements unless the user explicitly asks to remove them
+- Every element MUST have a unique "id" — use simple placeholders like "el_1", "el_2", etc.
+- Every option inside "multipleChoice", "checkbox", and "dropdown" elements MUST also have a unique "id"
+- Every element MUST have a "label" (non-empty string)
+- Return ONLY the JSON — no markdown, no explanation, no code fences`;
+}
