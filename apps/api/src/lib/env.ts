@@ -31,7 +31,10 @@ export const config = {
   ai: {
     apiKey: process.env.OPENROUTER_API_KEY || "",
     model: process.env.AI_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free",
-    conversationWindowSize: parseInt(process.env.CONVERSATION_WINDOW_SIZE || "5", 10),
+    conversationWindowSize: (() => {
+      const parsed = parseInt(process.env.CONVERSATION_WINDOW_SIZE || "5", 10);
+      return Number.isInteger(parsed) && parsed > 0 ? parsed : 5;
+    })(),
   },
 
 };

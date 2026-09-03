@@ -1,6 +1,6 @@
 import { Request, Response, RequestHandler } from "express";
 import { asyncHandler } from "../utils/async-handler";
-import { FormDefinitionSchema } from "@repo/types";
+import { FormDefinition, FormDefinitionSchema } from "@repo/types";
 import { CreateConversationInput, CreateMessageInput } from "../lib/conversation-schemas";
 import prisma from "../lib/db";
 import { config } from "../lib/env";
@@ -24,6 +24,9 @@ export const createConversation: RequestHandler = asyncHandler(
         const { prompt } = req.body as CreateConversationInput;
 
         const systemPrompt = buildFormGenerationPrompt();
+
+        let generatedData: FormDefinition | null = null;
+        let rawResponse: string | null = null;
 
         const MAX_RETRIES = 1;
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
@@ -64,52 +67,9 @@ export const createConversation: RequestHandler = asyncHandler(
                     return;
                 }
 
-                // Persist conversation + first message pair + FormVersion in one transaction
-                const conversation = await prisma.$transaction(async (tx) => {
-                    const convo = await tx.conversation.create({
-                        data: { userId },
-                    });
-
-                    const formVersion = await tx.formVersion.create({
-                        data: {
-                            version: 0,
-                            definition: validated.data,
-                            conversationId: convo.id,
-                        },
-                    });
-
-                    await tx.message.create({
-                        data: {
-                            conversationId: convo.id,
-                            role: "USER",
-                            content: prompt,
-                        },
-                    });
-
-                    await tx.message.create({
-                        data: {
-                            conversationId: convo.id,
-                            role: "ASSISTANT",
-                            content: raw,
-                            formVersionId: formVersion.id,
-                        },
-                    });
-
-                    return { convo, formVersion };
-                });
-
-                res.status(201).json({
-                    success: true,
-                    data: {
-                        conversationId: conversation.convo.id,
-                        formVersion: {
-                            id: conversation.formVersion.id,
-                            version: conversation.formVersion.version,
-                            definition: validated.data,
-                        },
-                    },
-                });
-                return;
+                generatedData = validated.data;
+                rawResponse = raw;
+                break;
             } catch (err) {
                 if (attempt < MAX_RETRIES) continue;
                 console.error("AI form generation failed:", err);
@@ -120,7 +80,56 @@ export const createConversation: RequestHandler = asyncHandler(
                 return;
             }
         }
-        return;
+
+        if (!generatedData || !rawResponse) {
+            return;
+        }
+
+        // Persist conversation + first message pair + FormVersion
+        const conversation = await prisma.$transaction(async (tx) => {
+            const convo = await tx.conversation.create({
+                data: { userId },
+            });
+
+            const formVersion = await tx.formVersion.create({
+                data: {
+                    version: 0,
+                    definition: generatedData!,
+                    conversationId: convo.id,
+                },
+            });
+
+            await tx.message.create({
+                data: {
+                    conversationId: convo.id,
+                    role: "USER",
+                    content: prompt,
+                },
+            });
+
+            await tx.message.create({
+                data: {
+                    conversationId: convo.id,
+                    role: "ASSISTANT",
+                    content: rawResponse!,
+                    formVersionId: formVersion.id,
+                },
+            });
+
+            return { convo, formVersion };
+        });
+
+        res.status(201).json({
+            success: true,
+            data: {
+                conversationId: conversation.convo.id,
+                formVersion: {
+                    id: conversation.formVersion.id,
+                    version: conversation.formVersion.version,
+                    definition: generatedData,
+                },
+            },
+        });
     }
 );
 
@@ -181,6 +190,9 @@ export const addMessage: RequestHandler = asyncHandler(
             recentMessages.map((m) => ({ role: m.role, content: m.content }))
         );
 
+        let generatedData: FormDefinition | null = null;
+        let rawResponse: string | null = null;
+
         const MAX_RETRIES = 1;
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
             try {
@@ -220,45 +232,9 @@ export const addMessage: RequestHandler = asyncHandler(
                     return;
                 }
 
-                // Persist new message pair + new FormVersion
-                const newVersion = await prisma.$transaction(async (tx) => {
-                    const formVersion = await tx.formVersion.create({
-                        data: {
-                            version: latestVersion.version + 1,
-                            definition: validated.data,
-                            conversationId: conversationId,
-                            ...(conversation.formId && { formId: conversation.formId }),
-                        },
-                    });
-
-                    await tx.message.create({
-                        data: { conversationId: conversationId, role: "USER", content: prompt },
-                    });
-
-                    await tx.message.create({
-                        data: {
-                            conversationId: conversationId,
-                            role: "ASSISTANT",
-                            content: raw,
-                            formVersionId: formVersion.id,
-                        },
-                    });
-
-                    return formVersion;
-                });
-
-
-                res.json({
-                    success: true,
-                    data: {
-                        formVersion: {
-                            id: newVersion.id,
-                            version: newVersion.version,
-                            definition: validated.data,
-                        },
-                    },
-                });
-                return;
+                generatedData = validated.data;
+                rawResponse = raw;
+                break;
             } catch (err) {
                 if (attempt < MAX_RETRIES) continue;
                 console.error("AI refinement failed:", err);
@@ -269,7 +245,48 @@ export const addMessage: RequestHandler = asyncHandler(
                 return;
             }
         }
-        return;
+
+        if (!generatedData || !rawResponse) {
+            return;
+        }
+
+        // Persist new message pair + new FormVersion outside retry loop
+        const newVersion = await prisma.$transaction(async (tx) => {
+            const formVersion = await tx.formVersion.create({
+                data: {
+                    version: latestVersion.version + 1,
+                    definition: generatedData!,
+                    conversationId: conversationId,
+                    ...(conversation.formId && { formId: conversation.formId }),
+                },
+            });
+
+            await tx.message.create({
+                data: { conversationId: conversationId, role: "USER", content: prompt },
+            });
+
+            await tx.message.create({
+                data: {
+                    conversationId: conversationId,
+                    role: "ASSISTANT",
+                    content: rawResponse!,
+                    formVersionId: formVersion.id,
+                },
+            });
+
+            return formVersion;
+        });
+
+        res.json({
+            success: true,
+            data: {
+                formVersion: {
+                    id: newVersion.id,
+                    version: newVersion.version,
+                    definition: generatedData,
+                },
+            },
+        });
     }
 );
 

@@ -44,8 +44,13 @@ export function buildRefinementPrompt(
   currentDefinition: object,
   history: { role: string; content: string }[]
 ): string {
-  const historyText = history
-    .map((m) => `${m.role === "USER" ? "User" : "Assistant"}: ${m.content}`)
+    const historyText = history
+    .map((m) => {
+      if (m.role === "USER") {
+        return `User: ${m.content}`;
+      }
+      return "Assistant: [Updated form definition]";
+    })
     .join("\n");
 
   return `You are an expert form builder helping a user refine an existing form.
