@@ -1,6 +1,7 @@
 import express from "express";
 import cors from "cors";
 import router from "./routes";
+import { csrfGuard } from "./middleware/csrf";
 import { errorHandler } from "./middleware/error-handler";
 
 const app: express.Application = express();
@@ -12,6 +13,7 @@ app.use(
   })
 );
 app.use(express.json());
+app.use(csrfGuard);
 
 app.use(router);
 
