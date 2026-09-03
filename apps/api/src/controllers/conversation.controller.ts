@@ -219,7 +219,7 @@ export const addMessage: RequestHandler = asyncHandler(
                 }
 
                 const parsed = JSON.parse(raw);
-                injectIds(parsed);
+                injectIds(parsed, true);
                 const validated = FormDefinitionSchema.safeParse(parsed);
 
                 if (!validated.success) {

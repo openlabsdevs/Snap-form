@@ -32,9 +32,12 @@ export const config = {
     apiKey: process.env.OPENROUTER_API_KEY || "",
     model: process.env.AI_MODEL || "nvidia/nemotron-3-ultra-550b-a55b:free",
     conversationWindowSize: (() => {
-      const parsed = parseInt(process.env.CONVERSATION_WINDOW_SIZE || "5", 10);
-      return Number.isInteger(parsed) && parsed > 0 ? parsed : 5;
+      const raw = process.env.CONVERSATION_WINDOW_SIZE?.trim();
+      if (!raw || !/^\d+$/.test(raw)) return 5;
+      const parsed = Number(raw);
+      return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : 5;
     })(),
+
   },
 
 };

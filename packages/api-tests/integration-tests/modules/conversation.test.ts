@@ -152,6 +152,22 @@ describe("Conversation History", () => {
         expect(getRes.data.data.formVersions).toHaveLength(1); // v0
     });
 
+    it("should not allow one user to fetch another user's conversation", async () => {
+        mockSend = spyOn(aiClient.chat, "send" as any).mockImplementation(async () => ({
+            choices: [{ message: { content: JSON.stringify(mockDefinition) } }],
+        })) as any;
+
+        const { client: client1 } = await createAuthenticatedClient();
+        const { client: client2 } = await createAuthenticatedClient();
+
+        const createRes = await client1.post("/api/v1/conversations", { prompt: "feedback form" });
+        const conversationId = createRes.data.data.conversationId;
+
+        const getRes = await client2.get(`/api/v1/conversations/${conversationId}`);
+        expect(getRes.status).toBe(404);
+    });
+
+
     it("should return 404 when fetching a conversation that doesn't exist", async () => {
         const { client } = await createAuthenticatedClient();
         const res = await client.get("/api/v1/conversations/nonexistent-id");
