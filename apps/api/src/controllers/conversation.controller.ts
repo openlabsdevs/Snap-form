@@ -353,12 +353,17 @@ export const getConversation: RequestHandler = asyncHandler(
     const userId = res.locals.user.id as string;
 
     const allVersions = req.query.allVersions === "true";
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit as string) || 50, 1),
+      100,
+    );
 
     const conversation = await prisma.conversation.findFirst({
       where: { id: req.params.id, userId },
       include: {
         messages: {
           orderBy: { sequence: "asc" },
+          take: limit,
           select: {
             id: true,
             role: true,
