@@ -3,6 +3,13 @@ import { randomUUID } from "node:crypto";
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+/**
+ * Recursively injects valid, unique UUIDs into form element definitions and options.
+ * Optionally preserves existing valid UUIDs while preventing collisions.
+ *
+ * @param definition - Form definition containing an elements array.
+ * @param preserveValidUuids - Whether to keep existing valid UUIDs (default: true).
+ */
 export function injectIds(
   definition: { elements?: unknown[] },
   preserveValidUuids = true,

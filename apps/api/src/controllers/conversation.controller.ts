@@ -14,11 +14,10 @@ import {
   buildRefinementPrompt,
 } from "../lib/ai/prompt";
 
-// ============================================
-// POST /api/v1/conversations
-// Start a new conversation — first AI generation
-// ============================================
-
+/**
+ * Starts a new conversation and generates the initial form definition using AI.
+ * POST /api/v1/conversations
+ */
 export const createConversation: RequestHandler = asyncHandler(
   async (req: Request, res: Response) => {
     if (!config.ai.apiKey) {
@@ -152,11 +151,10 @@ export const createConversation: RequestHandler = asyncHandler(
   },
 );
 
-// ============================================
-// POST /api/v1/conversations/:id/messages
-// Add a refinement turn to an existing conversation
-// ============================================
-
+/**
+ * Adds a user refinement message to an existing conversation and generates an updated form version.
+ * POST /api/v1/conversations/:id/messages
+ */
 export const addMessage: RequestHandler = asyncHandler(
   async (req: Request, res: Response) => {
     if (!config.ai.apiKey) {
@@ -343,11 +341,10 @@ export const addMessage: RequestHandler = asyncHandler(
   },
 );
 
-// ============================================
-// GET /api/v1/conversations/:id
-// Fetch a conversation with its messages
-// ============================================
-
+/**
+ * Retrieves a conversation by ID, including its messages and form version history.
+ * GET /api/v1/conversations/:id
+ */
 export const getConversation: RequestHandler = asyncHandler(
   async (req: Request, res: Response) => {
     const userId = res.locals.user.id as string;
