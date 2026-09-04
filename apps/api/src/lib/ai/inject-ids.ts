@@ -5,14 +5,18 @@ const UUID_REGEX =
 
 export function injectIds(
   definition: { elements?: unknown[] },
-  preserveValidUuids = false
+  preserveValidUuids = true,
 ) {
   if (!Array.isArray(definition?.elements)) return;
 
   for (const el of definition.elements) {
     if (!el || typeof el !== "object") continue;
     const record = el as Record<string, unknown>;
-    if (!preserveValidUuids || typeof record.id !== "string" || !UUID_REGEX.test(record.id)) {
+    if (
+      !preserveValidUuids ||
+      typeof record.id !== "string" ||
+      !UUID_REGEX.test(record.id)
+    ) {
       record.id = randomUUID();
     }
 
@@ -21,7 +25,11 @@ export function injectIds(
       for (const opt of opts) {
         if (!opt || typeof opt !== "object") continue;
         const optRecord = opt as Record<string, unknown>;
-        if (!preserveValidUuids || typeof optRecord.id !== "string" || !UUID_REGEX.test(optRecord.id)) {
+        if (
+          !preserveValidUuids ||
+          typeof optRecord.id !== "string" ||
+          !UUID_REGEX.test(optRecord.id)
+        ) {
           optRecord.id = randomUUID();
         }
       }

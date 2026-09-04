@@ -31,16 +31,15 @@ model Message {
     id             String       @id @default(cuid())
     conversationId String
     conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+    role           MessageRole
+    content        String       @db.Text
+    sequence       Int
+    // If this message is an ASSISTANT response, link the FormVersion it produced
+    formVersionId  String?
+    formVersion    FormVersion? @relation(fields: [formVersionId], references: [id], onDelete: SetNull)
+    createdAt      DateTime     @default(now())
 
-    role    MessageRole
-    content String      @db.Text
-
-    // Only populated on ASSISTANT turns
-    formVersionId String?
-    formVersion   FormVersion? @relation(fields: [formVersionId], references: [id], onDelete: SetNull)
-
-    createdAt DateTime @default(now())
-
+    @@unique([conversationId, sequence])
     @@index([conversationId])
     @@map("messages")
 }
@@ -52,7 +51,7 @@ model FormVersion {
 
     // Null while the form is unsaved (draft), filled when user saves
     formId String?
-    form   Form?   @relation(fields: [formId], references: [id], onDelete: Cascade)
+    form   Form?   @relation(fields: [formId], references: [id], onDelete: SetNull)
 
     conversationId String
     conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -61,6 +60,7 @@ model FormVersion {
 
     createdAt DateTime @default(now())
 
+    @@unique([conversationId, version])
     @@index([formId])
     @@index([conversationId])
     @@map("form_versions")
