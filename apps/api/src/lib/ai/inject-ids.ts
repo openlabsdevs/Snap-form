@@ -9,29 +9,37 @@ export function injectIds(
 ) {
   if (!Array.isArray(definition?.elements)) return;
 
+  const seenIds = new Set<string>();
+
+  const getUniqueId = (candidate: unknown): string => {
+    if (
+      preserveValidUuids &&
+      typeof candidate === "string" &&
+      UUID_REGEX.test(candidate) &&
+      !seenIds.has(candidate)
+    ) {
+      seenIds.add(candidate);
+      return candidate;
+    }
+    let newId: string;
+    do {
+      newId = randomUUID();
+    } while (seenIds.has(newId));
+    seenIds.add(newId);
+    return newId;
+  };
+
   for (const el of definition.elements) {
     if (!el || typeof el !== "object") continue;
     const record = el as Record<string, unknown>;
-    if (
-      !preserveValidUuids ||
-      typeof record.id !== "string" ||
-      !UUID_REGEX.test(record.id)
-    ) {
-      record.id = randomUUID();
-    }
+    record.id = getUniqueId(record.id);
 
     const opts = record.options;
     if (Array.isArray(opts)) {
       for (const opt of opts) {
         if (!opt || typeof opt !== "object") continue;
         const optRecord = opt as Record<string, unknown>;
-        if (
-          !preserveValidUuids ||
-          typeof optRecord.id !== "string" ||
-          !UUID_REGEX.test(optRecord.id)
-        ) {
-          optRecord.id = randomUUID();
-        }
+        optRecord.id = getUniqueId(optRecord.id);
       }
     }
   }

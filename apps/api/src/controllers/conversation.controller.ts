@@ -189,12 +189,10 @@ export const addMessage: RequestHandler = asyncHandler(
     });
 
     if (!latestVersion) {
-      res
-        .status(400)
-        .json({
-          success: false,
-          message: "No form version found in this conversation",
-        });
+      res.status(400).json({
+        success: false,
+        message: "No form version found in this conversation",
+      });
       return;
     }
 
@@ -218,12 +216,10 @@ export const addMessage: RequestHandler = asyncHandler(
       latestVersion.definition,
     );
     if (!currentDefinition.success) {
-      res
-        .status(500)
-        .json({
-          success: false,
-          message: "Current form definition is malformed",
-        });
+      res.status(500).json({
+        success: false,
+        message: "Current form definition is malformed",
+      });
       return;
     }
 
@@ -356,6 +352,8 @@ export const getConversation: RequestHandler = asyncHandler(
   async (req: Request, res: Response) => {
     const userId = res.locals.user.id as string;
 
+    const allVersions = req.query.allVersions === "true";
+
     const conversation = await prisma.conversation.findFirst({
       where: { id: req.params.id, userId },
       include: {
@@ -370,7 +368,8 @@ export const getConversation: RequestHandler = asyncHandler(
           },
         },
         formVersions: {
-          orderBy: { version: "asc" },
+          orderBy: { version: "desc" },
+          ...(allVersions ? {} : { take: 1 }),
           select: {
             id: true,
             version: true,

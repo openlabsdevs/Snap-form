@@ -127,4 +127,18 @@ describe("injectIds", () => {
     expect(definition.elements[1]).toBe("string");
     expect(definition.elements[2]).toBe(42);
   });
+
+  it("regenerates duplicate UUIDs to prevent collisions", () => {
+    const existingUuid = "550e8400-e29b-41d4-a716-446655440000";
+    const definition = {
+      elements: [
+        { id: existingUuid, type: "textInput", label: "Name" },
+        { id: existingUuid, type: "email", label: "Email" },
+      ],
+    };
+    injectIds(definition, true);
+    expect(definition.elements[0]!.id).toBe(existingUuid);
+    expect(definition.elements[1]!.id).toMatch(UUID_REGEX);
+    expect(definition.elements[1]!.id).not.toBe(existingUuid);
+  });
 });
