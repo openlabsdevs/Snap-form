@@ -148,6 +148,7 @@ describe("Conversation History", () => {
         const getRes = await client.get(`/api/v1/conversations/${conversationId}`);
 
         expect(getRes.status).toBe(200);
+        expect(getRes.headers["cache-control"]).toBe("no-store");
         expect(getRes.data.data.messages).toHaveLength(2); // USER + ASSISTANT
         expect(getRes.data.data.formVersions).toHaveLength(1); // v0
     });

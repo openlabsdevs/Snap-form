@@ -70,7 +70,17 @@ describe("AI Form Generation", () => {
 
     expect(res.status).toBe(200);
     expect(res.data.success).toBe(true);
-    expect(res.data.data.definition).toEqual(mockDefinition);
+    const definition = res.data.data.definition;
+    const elementIds = definition.elements.map((e: any) => e.id);
+    const mockIds = mockDefinition.elements.map((e) => e.id);
+
+    expect(definition.version).toBe(mockDefinition.version);
+    expect(elementIds).toHaveLength(2);
+    expect(new Set(elementIds).size).toBe(2); // fresh, unique IDs
+    expect(mockIds.some((id) => elementIds.includes(id))).toBe(false);
+    expect(definition.elements.map((e: any) => e.label)).toEqual(
+      mockDefinition.elements.map((e) => e.label),
+    );
   });
 
   it("should return 422 when AI response does not match the form schema", async () => {

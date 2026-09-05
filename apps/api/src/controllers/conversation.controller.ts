@@ -7,6 +7,8 @@ import {
 } from "../lib/conversation-schemas";
 import prisma from "../lib/db";
 import { config } from "../lib/env";
+import { isPrismaErrorCode } from "../utils/prisma";
+import type { FormVersion } from "@repo/db";
 import { aiClient } from "../lib/ai/client";
 import { injectIds } from "../lib/ai/inject-ids";
 import {
@@ -296,37 +298,49 @@ export const addMessage: RequestHandler = asyncHandler(
     }
 
     // Persist new message pair + new FormVersion outside retry loop
-    const newVersion = await prisma.$transaction(async (tx) => {
-      const formVersion = await tx.formVersion.create({
-        data: {
-          version: latestVersion.version + 1,
-          definition: generatedData!,
-          conversationId: conversationId,
-          ...(conversation.formId && { formId: conversation.formId }),
-        },
-      });
+    let newVersion: FormVersion;
+    try {
+      newVersion = await prisma.$transaction(async (tx) => {
+        const formVersion = await tx.formVersion.create({
+          data: {
+            version: latestVersion.version + 1,
+            definition: generatedData!,
+            conversationId: conversationId,
+            ...(conversation.formId && { formId: conversation.formId }),
+          },
+        });
 
-      await tx.message.create({
-        data: {
-          conversationId: conversationId,
-          role: "USER",
-          content: prompt,
-          sequence: nextSequence,
-        },
-      });
+        await tx.message.create({
+          data: {
+            conversationId: conversationId,
+            role: "USER",
+            content: prompt,
+            sequence: nextSequence,
+          },
+        });
 
-      await tx.message.create({
-        data: {
-          conversationId: conversationId,
-          role: "ASSISTANT",
-          content: rawResponse!,
-          formVersionId: formVersion.id,
-          sequence: nextSequence + 1,
-        },
-      });
+        await tx.message.create({
+          data: {
+            conversationId: conversationId,
+            role: "ASSISTANT",
+            content: rawResponse!,
+            formVersionId: formVersion.id,
+            sequence: nextSequence + 1,
+          },
+        });
 
-      return formVersion;
-    });
+        return formVersion;
+      });
+    } catch (err) {
+      if (isPrismaErrorCode(err, "P2002")) {
+        res.status(409).json({
+          success: false,
+          message: "A concurrent refinement was applied to this conversation. Please retry.",
+        });
+        return;
+      }
+      throw err;
+    }
 
     res.json({
       success: true,
@@ -359,13 +373,14 @@ export const getConversation: RequestHandler = asyncHandler(
       where: { id: req.params.id, userId },
       include: {
         messages: {
-          orderBy: { sequence: "asc" },
+          orderBy: { sequence: "desc" },
           take: limit,
           select: {
             id: true,
             role: true,
             content: true,
             formVersionId: true,
+            sequence: true,
             createdAt: true,
           },
         },
@@ -388,6 +403,9 @@ export const getConversation: RequestHandler = asyncHandler(
         .json({ success: false, message: "Conversation not found" });
       return;
     }
+
+    // Query returns newest first — reverse to preserve chronological order.
+    conversation.messages.reverse();
 
     res.json({ success: true, data: conversation });
   },

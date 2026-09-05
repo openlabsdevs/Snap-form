@@ -8,11 +8,11 @@ const UUID_REGEX =
  * Optionally preserves existing valid UUIDs while preventing collisions.
  *
  * @param definition - Form definition containing an elements array.
- * @param preserveValidUuids - Whether to keep existing valid UUIDs (default: true).
+ * @param preserveValidUuids - Whether to keep existing valid UUIDs (default: false).
  */
 export function injectIds(
   definition: { elements?: unknown[] },
-  preserveValidUuids = true,
+  preserveValidUuids = false,
 ) {
   if (!Array.isArray(definition?.elements)) return;
 

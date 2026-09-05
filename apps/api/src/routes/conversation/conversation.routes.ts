@@ -10,6 +10,9 @@ conversationRouter.use(requireAuth);
 
 conversationRouter.post("/", validate(CreateConversationSchema), createConversation);
 conversationRouter.post("/:id/messages", validate(CreateMessageSchema), addMessage);
-conversationRouter.get("/:id", getConversation);
+conversationRouter.get("/:id", (req, res, next) => {
+  res.set("Cache-Control", "no-store");
+  next();
+}, getConversation);
 
 export default conversationRouter;
