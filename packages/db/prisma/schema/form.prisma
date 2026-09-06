@@ -34,11 +34,13 @@ model Form {
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Relation
- 
-  responses        Response[]
-  templates        Template[]
-   purchasedAsTemplate UserOwnedTemplate[]
-  formIntegrations FormIntegration[]
+
+  responses           Response[]
+  templates           Template[]
+  purchasedAsTemplate UserOwnedTemplate[]
+  formIntegrations    FormIntegration[]
+  conversations       Conversation[]
+  formVersions        FormVersion[]
 
   // Metadata
   viewCount     Int @default(0)
@@ -91,8 +93,8 @@ model FormIntegration {
 
   // Google Sheets credentials
   provider       IntegrationProvider @default(GOOGLE_SHEETS)
-  accessToken    String  @db.Text
-  refreshToken   String? @db.Text
+  accessToken    String              @db.Text
+  refreshToken   String?             @db.Text
   spreadsheetId  String
   spreadsheetUrl String
 

@@ -15,32 +15,33 @@ enum Plan {
 }
 
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
+  id            String  @id @default(cuid())
+  email         String  @unique
   name          String?
-  username      String?    @unique
+  username      String? @unique
   image         String?
   emailVerified Boolean @default(false)
 
   // Role & Subscription
-  role          Role      @default(USER)
-  plan          Plan      @default(FREE)
+  role Role @default(USER)
+  plan Plan @default(FREE)
 
   // Relations
-  forms             Form[]
-  templates         Template[]
-  sessions          Session[]
-  accounts          Account[]
-  reviews           TemplateReview[]
-  ownedTemplates    UserOwnedTemplate[]
+  forms          Form[]
+  templates      Template[]
+  sessions       Session[]
+  accounts       Account[]
+  reviews        TemplateReview[]
+  ownedTemplates UserOwnedTemplate[]
+  conversations  Conversation[]
 
   // Onboarding
   onboardingCompleted Boolean @default(false)
   socialLinks         Json    @default("{}")
 
   // Metadata
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([email])
   @@index([role])

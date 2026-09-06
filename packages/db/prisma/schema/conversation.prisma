@@ -1,0 +1,67 @@
+// ============================================
+// CONVERSATION HISTORY
+// ============================================
+
+enum MessageRole {
+    USER
+    ASSISTANT
+}
+
+model Conversation {
+    id     String @id @default(cuid())
+    userId String
+    user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+    // Linked to a Form once the user saves — null while still a draft
+    formId String?
+    form   Form?   @relation(fields: [formId], references: [id], onDelete: SetNull)
+
+    messages     Message[]
+    formVersions FormVersion[]
+
+    createdAt DateTime @default(now())
+    updatedAt DateTime @updatedAt
+
+    @@index([userId])
+    @@index([formId])
+    @@map("conversations")
+}
+
+model Message {
+    id             String       @id @default(cuid())
+    conversationId String
+    conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+    role           MessageRole
+    content        String       @db.Text
+    sequence       Int
+    // If this message is an ASSISTANT response, link the FormVersion it produced
+    formVersionId  String?
+    formVersion    FormVersion? @relation(fields: [formVersionId], references: [id], onDelete: SetNull)
+    createdAt      DateTime     @default(now())
+
+    @@unique([conversationId, sequence])
+    @@index([conversationId])
+    @@map("messages")
+}
+
+model FormVersion {
+    id         String @id @default(cuid())
+    version    Int
+    definition Json
+
+    // Null while the form is unsaved (draft), filled when user saves
+    formId String?
+    form   Form?   @relation(fields: [formId], references: [id], onDelete: SetNull)
+
+    conversationId String
+    conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+    messages Message[]
+
+    createdAt DateTime @default(now())
+
+    @@unique([conversationId, version])
+    @@index([formId])
+    @@index([conversationId])
+    @@map("form_versions")
+}

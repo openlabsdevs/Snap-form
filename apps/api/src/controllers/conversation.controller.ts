@@ -1,0 +1,412 @@
+import { Request, Response, RequestHandler } from "express";
+import { asyncHandler } from "../utils/async-handler";
+import { FormDefinition, FormDefinitionSchema } from "@repo/types";
+import {
+  CreateConversationInput,
+  CreateMessageInput,
+} from "../lib/conversation-schemas";
+import prisma from "../lib/db";
+import { config } from "../lib/env";
+import { isPrismaErrorCode } from "../utils/prisma";
+import type { FormVersion } from "@repo/db";
+import { aiClient } from "../lib/ai/client";
+import { injectIds } from "../lib/ai/inject-ids";
+import {
+  buildFormGenerationPrompt,
+  buildRefinementPrompt,
+} from "../lib/ai/prompt";
+
+/**
+ * Starts a new conversation and generates the initial form definition using AI.
+ * POST /api/v1/conversations
+ */
+export const createConversation: RequestHandler = asyncHandler(
+  async (req: Request, res: Response) => {
+    if (!config.ai.apiKey) {
+      res
+        .status(503)
+        .json({ success: false, message: "AI service not configured" });
+      return;
+    }
+
+    const userId = res.locals.user.id as string;
+    const { prompt } = req.body as CreateConversationInput;
+
+    const systemPrompt = buildFormGenerationPrompt();
+
+    let generatedData: FormDefinition | null = null;
+    let rawResponse: string | null = null;
+
+    const MAX_RETRIES = 1;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const result = await aiClient.chat.send(
+          {
+            chatRequest: {
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: prompt },
+              ],
+              model: config.ai.model,
+              stream: false,
+              responseFormat: { type: "json_object" },
+            },
+          },
+          { timeoutMs: 30000 },
+        );
+
+        const raw = result.choices[0]?.message?.content;
+        if (!raw) {
+          if (attempt < MAX_RETRIES) continue;
+          res
+            .status(502)
+            .json({ success: false, message: "AI returned an empty response" });
+          return;
+        }
+
+        const parsed = JSON.parse(raw);
+        injectIds(parsed);
+        const validated = FormDefinitionSchema.safeParse(parsed);
+
+        if (!validated.success) {
+          if (attempt < MAX_RETRIES) continue;
+          res.status(422).json({
+            success: false,
+            message: "AI response did not match the expected form schema",
+            errors: validated.error.flatten(),
+          });
+          return;
+        }
+
+        generatedData = validated.data;
+        rawResponse = raw;
+        break;
+      } catch (err) {
+        if (attempt < MAX_RETRIES) continue;
+        if (err instanceof SyntaxError) {
+          res.status(422).json({
+            success: false,
+            message: "AI response was not valid JSON",
+          });
+          return;
+        }
+        console.error("AI form generation failed:", err);
+        res.status(502).json({
+          success: false,
+          message: "AI provider error",
+        });
+        return;
+      }
+    }
+
+    if (!generatedData || !rawResponse) {
+      return;
+    }
+
+    // Persist conversation + first message pair + FormVersion
+    const conversation = await prisma.$transaction(async (tx) => {
+      const convo = await tx.conversation.create({
+        data: { userId },
+      });
+
+      const formVersion = await tx.formVersion.create({
+        data: {
+          version: 0,
+          definition: generatedData!,
+          conversationId: convo.id,
+        },
+      });
+
+      await tx.message.create({
+        data: {
+          conversationId: convo.id,
+          role: "USER",
+          content: prompt,
+          sequence: 0,
+        },
+      });
+
+      await tx.message.create({
+        data: {
+          conversationId: convo.id,
+          role: "ASSISTANT",
+          content: rawResponse!,
+          formVersionId: formVersion.id,
+          sequence: 1,
+        },
+      });
+
+      return { convo, formVersion };
+    });
+
+    res.status(201).json({
+      success: true,
+      data: {
+        conversationId: conversation.convo.id,
+        formVersion: {
+          id: conversation.formVersion.id,
+          version: conversation.formVersion.version,
+          definition: generatedData,
+        },
+      },
+    });
+  },
+);
+
+/**
+ * Adds a user refinement message to an existing conversation and generates an updated form version.
+ * POST /api/v1/conversations/:id/messages
+ */
+export const addMessage: RequestHandler = asyncHandler(
+  async (req: Request, res: Response) => {
+    if (!config.ai.apiKey) {
+      res
+        .status(503)
+        .json({ success: false, message: "AI service not configured" });
+      return;
+    }
+
+    const userId = res.locals.user.id as string;
+    const conversationId = req.params.id as string;
+    const { prompt } = req.body as CreateMessageInput;
+
+    // Verify conversation belongs to this user
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: conversationId, userId },
+    });
+
+    if (!conversation) {
+      res
+        .status(404)
+        .json({ success: false, message: "Conversation not found" });
+      return;
+    }
+
+    // Get current form definition (latest FormVersion)
+    const latestVersion = await prisma.formVersion.findFirst({
+      where: { conversationId },
+      orderBy: { version: "desc" },
+    });
+
+    if (!latestVersion) {
+      res.status(400).json({
+        success: false,
+        message: "No form version found in this conversation",
+      });
+      return;
+    }
+
+    // Get last K message turns for context
+    const windowSize = config.ai.conversationWindowSize;
+    const recentMessages = await prisma.message.findMany({
+      where: { conversationId },
+      orderBy: { sequence: "desc" },
+      take: windowSize * 2,
+    });
+    recentMessages.reverse();
+
+    // Get the current max sequence
+    const maxSeq = await prisma.message.aggregate({
+      where: { conversationId },
+      _max: { sequence: true },
+    });
+    const nextSequence = (maxSeq._max.sequence ?? -1) + 1;
+
+    const currentDefinition = FormDefinitionSchema.safeParse(
+      latestVersion.definition,
+    );
+    if (!currentDefinition.success) {
+      res.status(500).json({
+        success: false,
+        message: "Current form definition is malformed",
+      });
+      return;
+    }
+
+    const systemPrompt = buildRefinementPrompt(
+      currentDefinition.data,
+      recentMessages.map((m) => ({ role: m.role, content: m.content })),
+    );
+
+    let generatedData: FormDefinition | null = null;
+    let rawResponse: string | null = null;
+
+    const MAX_RETRIES = 1;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const result = await aiClient.chat.send(
+          {
+            chatRequest: {
+              messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: prompt },
+              ],
+              model: config.ai.model,
+              stream: false,
+              responseFormat: { type: "json_object" },
+            },
+          },
+          { timeoutMs: 30000 },
+        );
+
+        const raw = result.choices[0]?.message?.content;
+        if (!raw) {
+          if (attempt < MAX_RETRIES) continue;
+          res
+            .status(502)
+            .json({ success: false, message: "AI returned an empty response" });
+          return;
+        }
+
+        const parsed = JSON.parse(raw);
+        injectIds(parsed, true);
+        const validated = FormDefinitionSchema.safeParse(parsed);
+
+        if (!validated.success) {
+          if (attempt < MAX_RETRIES) continue;
+          res.status(422).json({
+            success: false,
+            message: "AI response did not match the expected form schema",
+            errors: validated.error.flatten(),
+          });
+          return;
+        }
+
+        generatedData = validated.data;
+        rawResponse = raw;
+        break;
+      } catch (err) {
+        if (attempt < MAX_RETRIES) continue;
+        if (err instanceof SyntaxError) {
+          res.status(422).json({
+            success: false,
+            message: "AI response was not valid JSON",
+          });
+          return;
+        }
+        console.error("AI refinement failed:", err);
+        res.status(502).json({
+          success: false,
+          message: "AI provider error",
+        });
+        return;
+      }
+    }
+
+    if (!generatedData || !rawResponse) {
+      return;
+    }
+
+    // Persist new message pair + new FormVersion outside retry loop
+    let newVersion: FormVersion;
+    try {
+      newVersion = await prisma.$transaction(async (tx) => {
+        const formVersion = await tx.formVersion.create({
+          data: {
+            version: latestVersion.version + 1,
+            definition: generatedData!,
+            conversationId: conversationId,
+            ...(conversation.formId && { formId: conversation.formId }),
+          },
+        });
+
+        await tx.message.create({
+          data: {
+            conversationId: conversationId,
+            role: "USER",
+            content: prompt,
+            sequence: nextSequence,
+          },
+        });
+
+        await tx.message.create({
+          data: {
+            conversationId: conversationId,
+            role: "ASSISTANT",
+            content: rawResponse!,
+            formVersionId: formVersion.id,
+            sequence: nextSequence + 1,
+          },
+        });
+
+        return formVersion;
+      });
+    } catch (err) {
+      if (isPrismaErrorCode(err, "P2002")) {
+        res.status(409).json({
+          success: false,
+          message: "A concurrent refinement was applied to this conversation. Please retry.",
+        });
+        return;
+      }
+      throw err;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        formVersion: {
+          id: newVersion.id,
+          version: newVersion.version,
+          definition: generatedData,
+        },
+      },
+    });
+  },
+);
+
+/**
+ * Retrieves a conversation by ID, including its messages and form version history.
+ * GET /api/v1/conversations/:id
+ */
+export const getConversation: RequestHandler = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = res.locals.user.id as string;
+
+    const allVersions = req.query.allVersions === "true";
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit as string) || 50, 1),
+      100,
+    );
+
+    const conversation = await prisma.conversation.findFirst({
+      where: { id: req.params.id, userId },
+      include: {
+        messages: {
+          orderBy: { sequence: "desc" },
+          take: limit,
+          select: {
+            id: true,
+            role: true,
+            content: true,
+            formVersionId: true,
+            sequence: true,
+            createdAt: true,
+          },
+        },
+        formVersions: {
+          orderBy: { version: "desc" },
+          ...(allVersions ? {} : { take: 1 }),
+          select: {
+            id: true,
+            version: true,
+            definition: true,
+            createdAt: true,
+          },
+        },
+      },
+    });
+
+    if (!conversation) {
+      res
+        .status(404)
+        .json({ success: false, message: "Conversation not found" });
+      return;
+    }
+
+    // Query returns newest first — reverse to preserve chronological order.
+    conversation.messages.reverse();
+
+    res.json({ success: true, data: conversation });
+  },
+);

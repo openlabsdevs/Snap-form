@@ -8,6 +8,7 @@ import publicRouter from "./public/public.routes";
 import oauthRouter from "./user/oauth.routes";
 import onboardingRouter from "./user/onboarding.routes";
 import templateRouter from "./template/template.routes";
+import conversationRouter from "./conversation/conversation.routes";
 import { toNodeHandler } from "better-auth/node";
 import { auth } from "../lib/auth";
 
@@ -27,6 +28,7 @@ router.use("/api/v1/user/onboarding", onboardingRouter);
 // is mounted first, Express will intercept that path and return 404.
 router.use("/api/v1/forms", formRouter);
 router.use("/api/v1/templates", templateRouter);
+router.use("/api/v1/conversations", conversationRouter);
 router.use("/api/v1/forms/:id/responses", responseRouter);
 router.use("/api/v1/public", publicRouter);
 
